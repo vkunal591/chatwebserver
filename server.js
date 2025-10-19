@@ -12,7 +12,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ["http://localhost:3000","http://192.168.86.28:3000"],
+    origin: ['*', "http://localhost:3000", "http://192.168.45.2:3000"],
     methods: ["GET", "POST"],
   },
 });
@@ -113,28 +113,65 @@ app.get("/api/messages/:friendId", authMiddleware, async (req, res) => {
   }
 });
 
-// Socket.IO for real-time messaging
+const onlineUsers = new Map();
+
 io.on("connection", (socket) => {
   console.log("User connected:", socket.id);
 
   socket.on("join", (userId) => {
-    socket.join(userId);
+    socket.userId = userId;
+    onlineUsers.set(userId, socket.id);
+    io.emit("onlineUsers", Array.from(onlineUsers.keys()));
   });
 
+  // --- Chat Messaging ---
   socket.on("sendMessage", async ({ sender, receiver, content }) => {
     try {
       const message = new Message({ sender, receiver, content });
       await message.save();
-      io.to(receiver).emit("receiveMessage", message);
-      io.to(sender).emit("receiveMessage", message);
+      io.to(onlineUsers.get(receiver)).emit("receiveMessage", message);
+      io.to(onlineUsers.get(sender)).emit("receiveMessage", message);
     } catch (error) {
       console.error("Message error:", error);
     }
   });
 
+  // --- Typing Indicator ---
+  socket.on("typing", ({ to, from }) => {
+    io.to(onlineUsers.get(to)).emit("typing", { from });
+  });
+
+  socket.on("stopTyping", ({ to, from }) => {
+    io.to(onlineUsers.get(to)).emit("stopTyping", { from });
+  });
+
+  // --- WebRTC Call Signaling ---
+
+  socket.on("callUser", ({ to, offer, from }) => {
+    io.to(onlineUsers.get(to)).emit("incomingCall", { from, offer });
+  });
+
+  socket.on("answerCall", ({ to, answer }) => {
+    io.to(onlineUsers.get(to)).emit("callAnswered", { answer });
+  });
+
+  socket.on("iceCandidate", ({ to, candidate }) => {
+    io.to(onlineUsers.get(to)).emit("iceCandidate", { candidate });
+  });
+
+  socket.on("endCall", ({ to }) => {
+    io.to(onlineUsers.get(to)).emit("callEnded");
+  });
+
+  // --- Disconnect ---
   socket.on("disconnect", () => {
+    if (socket.userId) {
+      onlineUsers.delete(socket.userId);
+      io.emit("onlineUsers", Array.from(onlineUsers.keys()));
+    }
     console.log("User disconnected:", socket.id);
   });
 });
+
 
 server.listen(5000, () => console.log("Server running on port 5000"));
