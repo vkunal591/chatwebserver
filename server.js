@@ -146,17 +146,16 @@ io.on("connection", (socket) => {
   });
 
   // --- WebRTC Call Signaling ---
-
-  socket.on("callUser", ({ to, offer, from }) => {
-    io.to(onlineUsers.get(to)).emit("incomingCall", { from, offer });
+  socket.on("callUser", ({ to, signal, from, type }) => {
+    io.to(onlineUsers.get(to)).emit("incomingCall", { from, signal, type });
   });
 
-  socket.on("answerCall", ({ to, answer }) => {
-    io.to(onlineUsers.get(to)).emit("callAnswered", { answer });
+  socket.on("answerCall", ({ to, signal }) => {
+    io.to(onlineUsers.get(to)).emit("callAnswered", signal);
   });
 
   socket.on("iceCandidate", ({ to, candidate }) => {
-    io.to(onlineUsers.get(to)).emit("iceCandidate", { candidate });
+    io.to(onlineUsers.get(to)).emit("iceCandidate", candidate);
   });
 
   socket.on("endCall", ({ to }) => {
