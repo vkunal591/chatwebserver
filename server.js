@@ -10,6 +10,8 @@ const Message = require("./models/Message");
 const multer = require('multer')
 const path = require('path')
 const fs = require("fs");
+require("dotenv").config();
+
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
@@ -26,13 +28,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
+const DB_URL = process.env.DB_URL || "supersecretkey";
 
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ['*', "http://localhost:3000", "http://192.168.224.2:3000"],
+    origin: ['*', "http://localhost:3000", "http://192.168.224.2:3000",],
     methods: ["GET", "POST"],
   },
 });
@@ -41,14 +44,13 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 
-// MongoDB Connection
-mongoose
-  .connect("mongodb://localhost:27017/chat-app", {
-    useNewUrlParser: true,
-    useUnifiedTopology: true,
-  })
-  .then(() => console.log("MongoDB connected"))
-  .catch((err) => console.error(err));
+
+mongoose.connect(process.env.DB_URL, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+})
+.then(() => console.log("✅ MongoDB connected"))
+.catch(err => console.error("❌ MongoDB connection error:", err));
 
 // Middleware to verify JWT
 const authMiddleware = async (req, res, next) => {
