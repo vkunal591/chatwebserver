@@ -10,6 +10,7 @@ const Message = require("./models/Message");
 const multer = require('multer')
 const path = require('path')
 const fs = require("fs");
+const { decode } = require("punycode");
 require("dotenv").config();
 
 
@@ -35,7 +36,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: ['*', "http://localhost:3000", "http://192.168.224.2:3000",'https://chatwebserver-tau.vercel.app'],
+    origin: ['*', "http://localhost:3000", "http://192.168.195.2:3000", 'https://chatwebserver-tau.vercel.app'],
     methods: ["GET", "POST"],
   },
 });
@@ -49,8 +50,8 @@ mongoose.connect(process.env.DB_URL, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log("✅ MongoDB connected"))
-.catch(err => console.error("❌ MongoDB connection error:", err));
+  .then(() => console.log("✅ MongoDB connected"))
+  .catch(err => console.error("❌ MongoDB connection error:", err));
 
 // Middleware to verify JWT
 const authMiddleware = async (req, res, next) => {
@@ -68,6 +69,7 @@ const authMiddleware = async (req, res, next) => {
 // ✅ Validate Token API
 app.get("/api/validate-token", async (req, res) => {
   const authHeader = req.header("Authorization");
+  console.log(authHeader)
   if (!authHeader) {
     return res.status(401).json({ valid: false, message: "No token provided" });
   }
@@ -76,8 +78,10 @@ app.get("/api/validate-token", async (req, res) => {
 
   try {
     const decoded = jwt.verify(token, "secretkey"); // same key used during login
+    console.log(decoded)
     const user = await User.findById(decoded.id).select("_id username");
-    if (!req.user) return res.status(401).json({ error: "User not found" });
+    console.log(user)
+    // if (!req.user) return res.status(401).json({ error: "User not found" });
 
     if (!user) {
       return res.status(404).json({ valid: false, message: "User not found" });
