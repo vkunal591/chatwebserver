@@ -2,6 +2,7 @@ import express from "express";
 import http from "http";
 import { Server } from "socket.io";
 import cors from "cors";
+import path from "path"
 import Message from "./models/Message.js";
 // const { decode } = require("punycode");
 // const { log } = require("console");
@@ -32,7 +33,8 @@ const io =new Server(server, {
 
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
+
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 app.use('/api', userRoutes);
 app.use('/api', chatRoutes);
 app.use("/api", userManagementRoute);
