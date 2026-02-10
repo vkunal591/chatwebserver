@@ -1,195 +1,43 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
-const http = require("http");
-const socketIo = require("socket.io");
-const cors = require("cors");
-const User = require("./models/User");
-const Message = require("./models/Message");
-const multer = require('multer')
-const path = require('path')
-const fs = require("fs");
-const { decode } = require("punycode");
-require("dotenv").config();
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
+import cors from "cors";
+import path from "path"
+import Message from "./models/Message.js";
+// const { decode } = require("punycode");
+// const { log } = require("console");
+import dotenv from "dotenv";
+import { connectDB } from "./config/db.js";
+import userRoutes from "./routes/user/auth.route.js"
+import chatRoutes from "./routes/user/chat.route.js";
+import userManagementRoute from "./routes/admin/userMngmt.route.js";
 
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, "uploads");
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir);
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    cb(null, `${Date.now()}-${file.fieldname}${ext}`);
-  },
-});
-
-
-const upload = multer({ storage });
-const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
-const DB_URL = process.env.DB_URL || "supersecretkey";
+dotenv.config({
+  path:'./.env'
+})
 
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server, {
+const io =new Server(server, {
   cors: {
-    origin: ['*', "http://localhost:3000", "http://192.168.195.2:3000", 'https://chatwebserver-tau.vercel.app'],
+    origin: [
+      "*",
+      "http://localhost:3000",
+      "http://192.168.195.2:3000",
+      "https://chatwebserver-tau.vercel.app",
+    ],
     methods: ["GET", "POST"],
   },
 });
 
 app.use(cors());
 app.use(express.json());
-app.use('/uploads', express.static('uploads'));
 
-
-mongoose.connect(process.env.DB_URL, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-  .then(() => console.log("✅ MongoDB connected"))
-  .catch(err => console.error("❌ MongoDB connection error:", err));
-
-// Middleware to verify JWT
-const authMiddleware = async (req, res, next) => {
-  const token = req.header("Authorization")?.replace("Bearer ", "");
-  if (!token) return res.status(401).json({ error: "No token provided" });
-  try {
-    const decoded = jwt.verify(token, "secretkey");
-    req.user = await User.findById(decoded.id);
-    next();
-  } catch (error) {
-    res.status(401).json({ error: "Invalid token" });
-  }
-};
-
-// ✅ Validate Token API
-app.get("/api/validate-token", async (req, res) => {
-  const authHeader = req.header("Authorization");
-  console.log(authHeader)
-  if (!authHeader) {
-    return res.status(401).json({ valid: false, message: "No token provided" });
-  }
-
-  const token = authHeader.replace("Bearer ", "");
-
-  try {
-    const decoded = jwt.verify(token, "secretkey"); // same key used during login
-    console.log(decoded)
-    const user = await User.findById(decoded.id).select("_id username");
-    console.log(user)
-    // if (!req.user) return res.status(401).json({ error: "User not found" });
-
-    if (!user) {
-      return res.status(404).json({ valid: false, message: "User not found" });
-    }
-
-    return res.json({
-      valid: true,
-      message: "Token is valid",
-      user,
-    });
-  } catch (error) {
-    // Token is invalid or expired
-    return res.status(401).json({
-      valid: false,
-      message: "Invalid or expired token",
-    });
-  }
-});
-
-
-// Routes
-app.post("/api/register", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const existingUser = await User.findOne({ username });
-    if (existingUser) return res.status(400).json({ error: "Username taken" });
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = new User({ username, password: hashedPassword });
-    await user.save();
-    res.status(201).json({ message: "User registered" });
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.post("/api/login", async (req, res) => {
-  const { username, password } = req.body;
-  try {
-    const user = await User.findOne({ username });
-    if (!user || !(await bcrypt.compare(password, user.password))) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-    const token = jwt.sign({ id: user._id }, "secretkey", { expiresIn: "7d" });
-    res.json({ token, user: { id: user._id, username: user.username } });
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.post("/api/friends", authMiddleware, async (req, res) => {
-  const { friendUsername } = req.body;
-  try {
-    const friend = await User.findOne({ username: friendUsername });
-    if (!friend) return res.status(404).json({ error: "User not found" });
-    if (req.user.friends.includes(friend._id)) {
-      return res.status(400).json({ error: "Already friends" });
-    }
-    req.user.friends.push(friend._id);
-    await req.user.save();
-    res.json({ message: "Friend added", friend });
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.get("/api/friends", authMiddleware, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).populate(
-      "friends",
-      "username"
-    );
-    res.json(user.friends);
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-app.get("/api/messages/:friendId", authMiddleware, async (req, res) => {
-  try {
-    const messages = await Message.find({
-      $or: [
-        { sender: req.user._id, receiver: req.params.friendId },
-        { sender: req.params.friendId, receiver: req.user._id },
-      ],
-    }).sort({ timestamp: 1 });
-    res.json(messages);
-  } catch (error) {
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-
-
-
-app.post("/api/upload", authMiddleware, upload.single("file"), (req, res) => {
-  if (!req.file)
-    return res.status(400).json({ error: "No file uploaded" });
-
-  const fileUrl = `${req.protocol}://${req.get("host")}/uploads/${req.file.filename}`;
-
-  res.json({
-    url: fileUrl,
-    fileName: req.file.originalname,
-    fileType: req.file.mimetype,
-  });
-});
-
-
+app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+app.use('/api', userRoutes);
+app.use('/api', chatRoutes);
+app.use("/api", userManagementRoute);
 const onlineUsers = new Map();
 
 io.on("connection", (socket) => {
@@ -235,7 +83,6 @@ io.on("connection", (socket) => {
     }
   });
 
-
   // --- Typing Indicator ---
   socket.on("typing", ({ to, from }) => {
     io.to(onlineUsers.get(to)).emit("typing", { from });
@@ -274,5 +121,7 @@ io.on("connection", (socket) => {
 
 
 
-
-server.listen(5000, () => console.log("Server running on port 5000"));
+server.listen(5000, async () => {
+  connectDB();
+  console.log("Server running on port 5000")
+});
